@@ -72,6 +72,10 @@ class Trade:
     #: Trades pro Jahr um ein Vielfaches ueberschaetzen.
     entry_ts: pd.Timestamp | None = None
     exit_ts: pd.Timestamp | None = None
+    #: Zahl der erfuellten Richtlinien zum Signalzeitpunkt (-1 = nicht bewertet).
+    quality: int = -1
+    guideline_hits: dict[str, bool] = field(default_factory=dict)
+    timeframe: str = ""
 
     @property
     def bars_held(self) -> int:
@@ -125,6 +129,7 @@ def run(
     costs: Costs = Costs(),
     policy: ExitPolicy = ExitPolicy(),
     symbol: str = "",
+    timeframe: str = "",
     one_at_a_time: bool = True,
 ) -> list[Trade]:
     """Fuehrt die Signale aus und liefert die Trade-Liste.
@@ -167,6 +172,9 @@ def run(
             reason=reason, context_scale=sig.context_scale,
             trigger_scale=sig.trigger_scale, symbol=symbol,
             entry_ts=df.index[entry_bar], exit_ts=df.index[exit_bar],
+            quality=sig.quality,
+            guideline_hits=dict(sig.guidelines.hits) if sig.guidelines else {},
+            timeframe=timeframe,
         ))
         busy_until = exit_bar
 

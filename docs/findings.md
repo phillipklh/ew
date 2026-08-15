@@ -289,3 +289,106 @@ Bar-Indizes eines beliebigen Referenzinstruments. Da der S&P 500 bis 1927
 zurückreicht und ADA erst 2018 beginnt, wurde die Handelsfrequenz um etwa das
 Zwölffache überschätzt (90 statt 7,6 Trades/Jahr). `Trade` trägt jetzt echte
 Zeitstempel, und die Auswertung rechnet auf Kalenderbasis.
+
+---
+
+## F8 — Die Richtlinien-Hypothese hält nicht
+
+**Gemessen** auf 6.501 Trades über 1d/4h/1h, 25 Instrumente, Training-Universum.
+`scripts/test_quality.py`.
+
+Getestete Annahme: *Je mehr Richtlinien eine Zählung zusätzlich zu den
+Pflichtregeln erfüllt, desto besser das Setup.* Neun zum Signalzeitpunkt
+messbare Richtlinien (Substruktur von Welle 1 und 2, Retracement-Band,
+Zeitverhältnis, Volumenkontraktion, Momentum-Schub, Divergenz, Zustimmung der
+höheren Ebene, relative Wellengröße).
+
+Bewusst **nicht** als Schwellwertsuche ausgelegt: bei genug Kandidaten findet
+sich immer einer, der gut aussieht. Geprüft wurde die stärkere Aussage —
+steigt die Erwartung *monoton* mit dem Score?
+
+| Timeframe | n | Erwartung | Spearman rho | p |
+|---|---|---|---|---|
+| 1d | 746 | +0,218 R | +0,009 | 0,81 |
+| 4h | 1.213 | +0,116 R | +0,003 | 0,91 |
+| 1h | 4.542 | +0,048 R | −0,029 | 0,05 |
+
+**Kein monotoner Zusammenhang.** Auf 1h ist die Tendenz sogar leicht negativ.
+In der kombinierten Auswertung über 1d+4h hatte die höchste Qualitätsstufe
+(Score 7) die *schlechteste* Erwartung (−0,087 R).
+
+Keine einzelne Richtlinie übersteht die Bonferroni-Korrektur (|t| > 2,77).
+Der größte Wert ist `w2_ist_drei` mit t = −2,59 — und das mit *negativem*
+Vorzeichen. `korrektur_kuerzer` sah auf 1d allein noch signifikant aus
+(t = 2,97), fällt über den größeren Datensatz auf t = 0,74: ein Lehrstück
+dafür, warum Einzeltimeframe-Befunde nichts wert sind.
+
+Nebenbeobachtung: Die Erwartung **sinkt** mit steigender Frequenz
+(1d +0,218 → 4h +0,116 → 1h +0,048 R). Das passt zur Placebo-Erklärung aus
+F7 — auf kürzeren Horizonten ist weniger Trend zum Mitnehmen da, während die
+Kosten gleich bleiben. Die Frequenz lässt sich also nicht einfach durch
+schnellere Timeframes erkaufen.
+
+---
+
+## F9 — Der engere „taktische" Stop verschlechtert das Ergebnis
+
+**Gemessen** auf 36 Instrument/Timeframe-Kombinationen (1d + 4h),
+`scripts/test_fractal_entry.py`.
+
+Getestete Annahme: *Wer für einen 1d-Trade in den 15m-Chart schaut, findet
+einen präziseren Einstieg — und kann den Stop enger setzen, was dieselbe
+Bewegung ein Vielfaches an R wert macht.*
+
+Verglichen: Stop hinter dem Start von Welle 1 (`rule`, Regel-Invalidierung)
+gegen Stop knapp hinter dem auslösenden feinen Pivot (`trigger`).
+
+| Stop | Offset | n | Erwartung | Trefferquote | Ø Gewinn |
+|---|---|---|---|---|---|
+| rule | 1 | 2.029 | **+0,205 R** | 37,2 % | +1,64 R |
+| rule | 2 | 1.959 | +0,155 R | 36,8 % | +1,57 R |
+| rule | 3 | 2.066 | +0,179 R | 37,6 % | +1,54 R |
+| trigger | 1 | 3.568 | +0,098 R | 26,2 % | +2,35 R |
+| trigger | 2 | 4.251 | −0,004 R | 23,3 % | +2,53 R |
+| trigger | 3 | 6.570 | **−0,110 R** | 20,8 % | +2,66 R |
+
+Der Mechanismus funktioniert genau wie erwartet — der Ø Gewinn steigt von
++1,64 R auf +2,66 R. Aber die Trefferquote fällt von 37 % auf 21 %, und der
+Tausch geht **netto verloren**: die Differenz ist mit t = −2,69 bis −5,70
+klar signifikant negativ. Tiefere Auflösung verschlechtert das Ergebnis
+zusätzlich.
+
+**Einschränkung, die fair genannt werden muss:** Die Ausstiegsregel wurde
+nicht mitangepasst. Bei einem engen Stop ist 1R eine sehr kleine Bewegung,
+sodass die Breakeven-Regel fast sofort greift und Gewinner ausbremst. Der
+Test zeigt also: *dieser* enge Stop mit *dieser* Ausstiegsregel trägt nicht.
+Ob eine gemeinsam angepasste Kombination trägt, ist offen — aber das ist eine
+Parametersuche, und die müsste erneut gegen den Placebo bestehen.
+
+---
+
+## Zwischenstand: vier unabhängige Tests, kein Edge-Nachweis
+
+| Test | Frage | Ergebnis |
+|---|---|---|
+| F5 Fibonacci | Häufen sich Fib-Verhältnisse? | Lift 1,00 — nein |
+| F7 Placebo | Schlägt das Timing den Zufall? | +0,056 R, t = 1,10 — nein |
+| F8 Richtlinien | Sagt Qualität den Ausgang vorher? | rho ≈ 0 — nein |
+| F9 Fraktal-Stop | Zahlt sich der engere Stop aus? | t = −5,70 — nein, im Gegenteil |
+
+**Was das nicht ist:** kein Urteil über die Elliott-Wellen-Theorie und keine
+Aussage über diskretionäres Trading. Der manuelle Analyst bringt Kontext ein,
+den keiner dieser Tests abbildet.
+
+**Was es ist:** Der bisher automatisierte Teil — Pivot-Erkennung, Regelprüfung,
+Setup-Typ, Richtlinien-Score, Stop-Wahl — erklärt die Ergebnisse nicht. Was
+den Unterschied macht, liegt außerhalb dessen, was bisher formalisiert wurde.
+
+**Ungetestet und damit offen:**
+- Die Ausstiegsregel ist grob (fixes 3R-Ziel, Breakeven bei 1R). Ein Analyst
+  managt Ausstiege laufend anhand der sich entwickelnden Struktur.
+- Nur das Setup „nach Welle 2 in Welle 3" wird gehandelt — nicht Welle 4→5,
+  nicht Korrekturmuster, nicht Diagonalen-Abschlüsse.
+- Kein Outcome-Modell: bisher wird jedes regelkonforme Setup gleich gewichtet,
+  statt die Erfolgswahrscheinlichkeit aus Merkmalen zu lernen.
+- Das Holdout-Universum ist unberührt.

@@ -46,6 +46,13 @@ class Signal:
     wave1_end: Pivot
     trigger_pivot: Pivot  # bestaetigtes Ende der Korrektur auf feiner Ebene
     retrace: float        # wie weit die Korrektur Welle 1 zurueckgeholt hat
+    #: Erfuellte Richtlinien. Regeln sind Pflicht, Richtlinien sind Qualitaet -
+    #: je mehr zutreffen, desto tragfaehiger die Zaehlung.
+    guidelines: object | None = None
+
+    @property
+    def quality(self) -> int:
+        return self.guidelines.score if self.guidelines is not None else -1
 
     def risk(self, entry: float) -> float:
         return abs(entry - self.stop)
@@ -68,6 +75,9 @@ def generate(
     trigger_offset: int = 2,
     min_retrace: float = 0.15,
     max_retrace: float = 0.95,
+    stop_mode: str = "rule",
+    trigger_buffer: float = 0.10,
+    ctx=None,
 ) -> list[Signal]:
     """Signale an Bar `bar`. Streng kausal - nur bis `bar` Bestaetigtes.
 
@@ -87,10 +97,10 @@ def generate(
     if trigger_scale < 0:
         return []
 
-    ctx = _last_two_confirmed(lat, context_scale, bar)
-    if ctx is None:
+    pair = _last_two_confirmed(lat, context_scale, bar)
+    if pair is None:
         return []
-    p0, p1 = ctx
+    p0, p1 = pair
 
     d = 1 if p1.price > p0.price else -1
     w1 = abs(p1.price - p0.price)
@@ -121,17 +131,47 @@ def generate(
     if not (min_retrace <= retr <= max_retrace):
         return []
 
+    gl = None
+    if ctx is not None:
+        from ..scoring.guidelines import evaluate as eval_guidelines
+
+        gl = eval_guidelines(ctx, p0, p1, trig, bar, context_scale, d)
+
+    # Zwei Stop-Varianten, die sich wirtschaftlich stark unterscheiden:
+    #
+    #   "rule"    hinter dem Start von Welle 1. Das ist die Regel-Invalidierung:
+    #             erst dort ist die Zaehlung widerlegt. Weit, dafuer selten
+    #             faelschlich getroffen.
+    #   "trigger" knapp hinter dem ausloesenden feinen Pivot. Deutlich enger,
+    #             damit ist dieselbe Bewegung ein Vielfaches an R wert - der
+    #             eigentliche Hebel der Fraktal-Praezision. Preis dafuer ist
+    #             eine hoehere Ausstoppquote.
+    #
+    # Ohne diese Unterscheidung bleibt ein feinerer Trigger wirkungslos: er
+    # verbessert nur den Einstieg, waehrend das Risiko unveraendert an Welle 1
+    # haengt.
+    if stop_mode == "trigger":
+        buf = trigger_buffer * abs(trig.price - p1.price)
+        stop = trig.price - d * buf
+        # Der taktische Stop darf die Regel-Invalidierung nicht ueberschreiten:
+        # jenseits davon waere die Zaehlung ohnehin tot.
+        if (d > 0 and stop < p0.price) or (d < 0 and stop > p0.price):
+            stop = p0.price
+    else:
+        stop = p0.price
+
     return [
         Signal(
             bar=bar,
             direction=d,
-            stop=p0.price,
+            stop=stop,
             context_scale=context_scale,
             trigger_scale=trigger_scale,
             wave1_start=p0,
             wave1_end=p1,
             trigger_pivot=trig,
             retrace=retr,
+            guidelines=gl,
         )
     ]
 
@@ -143,16 +183,24 @@ def scan(
     context_scales: tuple[int, ...] = (4, 5, 6),
     trigger_offset: int = 2,
     start_bar: int | None = None,
+    with_guidelines: bool = True,
     **kw,
 ) -> list[Signal]:
     """Laeuft die gesamte Historie Bar fuer Bar ab und sammelt alle Signale."""
     n = len(df)
     lo = start_bar if start_bar is not None else 0
+
+    ctx = None
+    if with_guidelines:
+        from ..scoring.guidelines import Context
+
+        ctx = Context.build(lat, df)
+
     out: list[Signal] = []
     for bar in range(lo, n):
         for cs in context_scales:
             out.extend(
                 generate(lat, df, bar, context_scale=cs,
-                         trigger_offset=trigger_offset, **kw)
+                         trigger_offset=trigger_offset, ctx=ctx, **kw)
             )
     return out
