@@ -181,6 +181,113 @@ def run(
     return trades
 
 
+def run_limit(
+    df: pd.DataFrame,
+    signals: list,
+    *,
+    costs: Costs = Costs(),
+    symbol: str = "",
+    timeframe: str = "",
+    one_at_a_time: bool = True,
+    missed_mult: float = 1.0,
+) -> tuple[list[Trade], dict]:
+    """Fuehrt antizipative Limit-Setups aus.
+
+    Anders als bei einer Markteinstiegs-Order ist der Fill nicht sicher: die
+    Zone muss erst erreicht werden. Das ist kein Nachteil, sondern die
+    eigentliche Eigenschaft des Verfahrens - nicht erreichte Zonen kosten
+    nichts, waehrend erreichte ein sehr enges Risiko haben.
+
+    Konservative Annahmen:
+      - Fill zum Limit, ausser der Kurs eroeffnet bereits jenseits davon;
+        dann zum Eroeffnungskurs.
+      - Werden Fill und Stop in derselben Bar beruehrt, gilt der Trade als
+        ausgestoppt. Die Reihenfolge innerhalb der Bar ist unbekannt.
+      - Laeuft der Kurs ohne Fill weit genug in Zielrichtung davon, gilt das
+        Setup als verpasst und die Order wird geloescht.
+
+    Rueckgabe: Trades und eine Statistik ueber Fill- und Verfallsquoten.
+    """
+    trades: list[Trade] = []
+    stats = {"gestellt": 0, "gefuellt": 0, "verfallen": 0, "verpasst": 0,
+             "uebersprungen": 0}
+    busy_until = -1
+    o = df["open"].to_numpy("float64")
+    h = df["high"].to_numpy("float64")
+    lo = df["low"].to_numpy("float64")
+    n = len(df)
+
+    for sig in sorted(signals, key=lambda s: s.bar):
+        stats["gestellt"] += 1
+        if one_at_a_time and sig.bar <= busy_until:
+            stats["uebersprungen"] += 1
+            continue
+
+        d = sig.direction
+        w1 = abs(sig.wave1_end.price - sig.wave1_start.price)
+        missed_level = sig.wave1_end.price + d * missed_mult * w1
+
+        fill_bar = None
+        fill_px = np.nan
+        for i in range(sig.bar + 1, min(sig.expiry_bar, n - 1) + 1):
+            # Setup verpasst: der Kurs ist ohne uns weitergelaufen.
+            if (d > 0 and h[i] >= missed_level) or (d < 0 and lo[i] <= missed_level):
+                stats["verpasst"] += 1
+                break
+            touched = lo[i] <= sig.limit if d > 0 else h[i] >= sig.limit
+            if touched:
+                if (d > 0 and o[i] <= sig.limit) or (d < 0 and o[i] >= sig.limit):
+                    fill_px = float(o[i])
+                else:
+                    fill_px = float(sig.limit)
+                fill_bar = i
+                break
+        else:
+            stats["verfallen"] += 1
+
+        if fill_bar is None:
+            continue
+        stats["gefuellt"] += 1
+
+        risk = abs(fill_px - sig.stop)
+        if risk <= 0 or not np.isfinite(risk):
+            continue
+
+        exit_bar, exit_px, reason = fill_bar, sig.stop, "stop"
+        for i in range(fill_bar, n):
+            if (d > 0 and lo[i] <= sig.stop) or (d < 0 and h[i] >= sig.stop):
+                exit_bar, exit_px, reason = i, sig.stop, "stop"
+                break
+            if (d > 0 and h[i] >= sig.target) or (d < 0 and lo[i] <= sig.target):
+                exit_bar, exit_px, reason = i, sig.target, "ziel"
+                break
+        else:
+            exit_bar = n - 1
+            exit_px = float(df["close"].iloc[-1])
+            reason = "offen"
+
+        gross = (exit_px - fill_px) * d
+        cost = (fill_px + exit_px) * costs.per_side
+        r = (gross - cost) / risk
+
+        trades.append(Trade(
+            entry_bar=fill_bar, exit_bar=exit_bar, direction=d,
+            entry=fill_px, exit=exit_px, stop=sig.stop, r_multiple=float(r),
+            reason=reason, context_scale=sig.context_scale,
+            trigger_scale=sig.context_scale, symbol=symbol,
+            entry_ts=df.index[fill_bar], exit_ts=df.index[exit_bar],
+            quality=sig.confluence, timeframe=timeframe,
+            guideline_hits={
+                "squeeze": sig.squeeze_on,
+                "erweitert": sig.extended,
+                "konfluenz_2plus": sig.confluence >= 2,
+            },
+        ))
+        busy_until = exit_bar
+
+    return trades, stats
+
+
 # --------------------------------------------------------------------------
 # Kennzahlen
 # --------------------------------------------------------------------------
