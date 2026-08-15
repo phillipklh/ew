@@ -132,6 +132,134 @@ def _subwave_projection(
     return None
 
 
+#: Uebliche Verhaeltnisse der Schlusswelle einer Korrektur zur ersten
+#: Teilwelle derselben Komponente. Die Gleichheit ist der haeufigste Fall.
+C_RATIOS = (1.000, 1.618)
+#: Verhaeltnisse der fuenften Teilwelle eines Impulses zur ersten.
+W5_RATIOS = (0.618, 1.000)
+
+
+@dataclass
+class Decomposition:
+    """Zerlegung der laufenden Korrektur in ihre Teilwellen."""
+
+    scale: int
+    legs: int                 # abgeschlossene Teilwellen seit dem Wellenende
+    pivots: list[Pivot]       # beginnend mit dem Ausgangspivot
+    label: str                # "einfach", "double_three", "triple_three", ...
+    pending: str              # welche Teilwelle gerade laeuft
+
+    @property
+    def is_combination(self) -> bool:
+        return self.legs >= 6
+
+
+def decompose_correction(
+    lat: Lattice, scale: int, p1: Pivot, bar: int, min_legs: int = 2
+) -> Decomposition | None:
+    """Zerlegt die laufende Korrektur auf der feinsten brauchbaren Ebene.
+
+    Die Wellenzahl ordnet die Struktur ein (Lesson 9): 3 Wellen sind eine
+    einfache Korrektur, 7 eine Kombination aus zwei einfachen Korrekturen
+    (W-X-Y), 11 eine dreifache. Da die Korrektur noch laeuft, ist die letzte
+    Teilwelle unvollstaendig - genau sie soll projiziert werden.
+
+    Gesucht wird die feinste Ebene, die genug Teilwellen zeigt, ohne im
+    Rauschen zu verschwinden. Das entspricht dem Grundsatz, nicht beliebig
+    tief abzusteigen: sobald die Struktur klar ist, reicht sie.
+    """
+    # Wichtig: nicht die erstbeste Ebene nehmen. Die groebste Ebene zeigt fast
+    # immer nur zwei bis drei Teilwellen und laesst damit jede Kombination wie
+    # eine einfache Korrektur aussehen - eine erste Fassung erkannte so nur 30
+    # von 318 Strukturen als W-X-Y. Gesucht wird stattdessen die Ebene, deren
+    # Wellenzahl einer kanonischen korrektiven Zahl entspricht (Lesson 9:
+    # 3 einfach, 7 doppelt, 11 dreifach), und unter diesen die groebste -
+    # also die klarste, ohne unnoetig tief abzusteigen.
+    LABELS = {
+        2: ("einfach", "c"), 3: ("einfach", "c"),
+        6: ("double_three", "c_von_Y"), 7: ("double_three", "c_von_Y"),
+        10: ("triple_three", "c_von_Z"), 11: ("triple_three", "c_von_Z"),
+    }
+
+    candidates: list[Decomposition] = []
+    for s in range(scale - 1, max(scale - 5, -1), -1):
+        sub = [p for p in lat.visible_at(s, bar)
+               if p.idx >= p1.idx and not p.is_anchor]
+        # Der Ausgangspivot selbst muss enthalten sein; wegen der
+        # Verschachtelung existiert er auf jeder feineren Ebene.
+        if not sub or sub[0].idx != p1.idx:
+            sub = [p1] + [p for p in sub if p.idx > p1.idx]
+        legs = len(sub) - 1
+        if legs < min_legs:
+            continue
+        label, pending = LABELS.get(legs, (f"legs_{legs}", "offen"))
+        candidates.append(Decomposition(scale=s, legs=legs, pivots=sub,
+                                        label=label, pending=pending))
+
+    if not candidates:
+        return None
+    canonical = [c for c in candidates if c.pending != "offen"]
+    if canonical:
+        # Groebste Ebene mit kanonischer Wellenzahl: die hoechste Skala,
+        # also der erste Treffer in der absteigenden Reihenfolge.
+        return canonical[0]
+    return candidates[0]
+
+
+def project_pending_leg(dec: Decomposition) -> Zone | None:
+    """Projiziert das Ende der laufenden Teilwelle.
+
+    Unabhaengig davon, ob eine einfache Korrektur oder eine Kombination
+    vorliegt, sind die beiden zuletzt abgeschlossenen Teilwellen die
+    Bezugsgroessen: die vorletzte entspricht dem `a`, die letzte dem `b`,
+    und projiziert wird das `c` ab dem aktuellen Endpunkt. Bei einem
+    W-X-Y trifft das automatisch die Teilwellen des abschliessenden Y,
+    weil W und X davor liegen.
+    """
+    sub = dec.pivots
+    if len(sub) < 3:
+        return None
+    a_start, a_end, b_end = sub[-3], sub[-2], sub[-1]
+    a_len = abs(a_end.price - a_start.price)
+    if a_len <= 0:
+        return None
+    d_a = 1 if a_end.price > a_start.price else -1
+
+    targets = [b_end.price + d_a * r * a_len for r in C_RATIOS]
+    return Zone(lo=min(targets), hi=max(targets),
+                source=f"{dec.label}:{dec.pending}", scale=dec.scale)
+
+
+def project_fifth_of_c(
+    lat: Lattice, dec: Decomposition, bar: int
+) -> Zone | None:
+    """Projiziert die fuenfte Teilwelle der laufenden c-Welle.
+
+    Ist die c-Welle bereits angelaufen und zeigt auf einer feineren Ebene
+    ihre Wellen 1 bis 4, laesst sich ihr Ende ueber das Verhaeltnis der
+    fuenften zur ersten Teilwelle schaetzen. Das ist der Blick in den
+    naechstkleineren Zyklus, um die 5-Teilung der c zu ueberpruefen.
+    """
+    c_start = dec.pivots[-1]
+    for s in range(dec.scale - 1, max(dec.scale - 3, -1), -1):
+        inner = [p for p in lat.visible_at(s, bar)
+                 if p.idx >= c_start.idx and not p.is_anchor]
+        if not inner or inner[0].idx != c_start.idx:
+            inner = [c_start] + [p for p in inner if p.idx > c_start.idx]
+        # Vier abgeschlossene Teilwellen bedeuten: Welle 5 laeuft.
+        if len(inner) - 1 < 4:
+            continue
+        w1 = abs(inner[1].price - inner[0].price)
+        w4_end = inner[4]
+        if w1 <= 0:
+            continue
+        d = 1 if inner[1].price > inner[0].price else -1
+        targets = [w4_end.price + d * r * w1 for r in W5_RATIOS]
+        return Zone(lo=min(targets), hi=max(targets),
+                    source=f"fuenfte_von_c_s{s}", scale=s)
+    return None
+
+
 def build_confluence(
     lat: Lattice,
     p0: Pivot,

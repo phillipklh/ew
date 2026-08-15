@@ -38,6 +38,17 @@ class PatternType(str, Enum):
     ZIGZAG = "zigzag"
     FLAT = "flat"
     TRIANGLE = "triangle"
+    #: Kombination aus zwei einfachen Korrekturen, verbunden durch ein X
+    #: (Lesson 9, "double three"). Gesamtzahl 7 Wellen.
+    DOUBLE_THREE = "double_three"
+
+
+# Wellenzahlen zur groben Einordnung einer Struktur (Lesson 9):
+# 5/9/13/17 mit wenigen Ueberlappungen deutet auf motiv, 3/7/11/15 mit
+# vielen Ueberlappungen auf korrektiv. Das ist der praktischste
+# Unterscheidungstest, wenn die innere Zaehlung unklar ist.
+MOTIVE_COUNTS = (5, 9, 13, 17)
+CORRECTIVE_COUNTS = (3, 7, 11, 15)
 
 
 # Anzahl Wellen je Muster (Pivots = Wellen + 1).
@@ -48,6 +59,7 @@ WAVE_COUNT = {
     PatternType.ZIGZAG: 3,
     PatternType.FLAT: 3,
     PatternType.TRIANGLE: 5,
+    PatternType.DOUBLE_THREE: 7,
 }
 
 # Erwartete Unterteilung jeder Welle. 5 = motiv, 3 = korrektiv.
@@ -59,6 +71,8 @@ SUBDIVISION = {
     PatternType.ZIGZAG: (5, 3, 5),
     PatternType.FLAT: (3, 3, 5),
     PatternType.TRIANGLE: (3, 3, 3, 3, 3),
+    # W = 3, X = 3 (als eine Welle gezaehlt), Y = 3
+    PatternType.DOUBLE_THREE: (3, 3, 3, 3, 3, 3, 3),
 }
 
 
@@ -415,7 +429,77 @@ def check_triangle(pivots: list[Pivot], cfg: Config = Config()) -> Check:
     return Check(PatternType.TRIANGLE, not v, v, notes)
 
 
+def check_double_three(pivots: list[Pivot], cfg: Config = Config()) -> Check:
+    """Kombination W-X-Y (Lesson 9), Gesamtzahl 7 Wellen, 8 Pivots.
+
+    Aufteilung: W = Wellen 1-3, X = Welle 4 (Verbindung), Y = Wellen 5-7.
+    Das Buch nennt drei einschraenkende Beobachtungen:
+
+      - In einer Kombination tritt nie mehr als ein Zigzag auf. Gemeint sind
+        die Aktionskomponenten W und Y; die verbindende X-Welle ist laut Text
+        "most commonly zigzags" und faellt nicht darunter.
+      - Ebenso nie mehr als ein Dreieck.
+      - Ein Dreieck kann nur die **letzte** Komponente sein.
+
+    Kombinationen sind ueberwiegend seitwaerts gerichtet; ein Abgleiten
+    entgegen dem uebergeordneten Trend haben die Autoren nie beobachtet.
+    """
+    v: list[Violation] = []
+    if len(pivots) != 8:
+        return Check(PatternType.DOUBLE_THREE, False,
+                     [Violation("STRUKTUR", f"{len(pivots)} Pivots, erwartet 8")])
+    if not g.alternates(pivots):
+        v.append(Violation("STRUKTUR", "Pivots wechseln nicht zwischen Hoch und Tief"))
+    if not g.monotonic_time(pivots):
+        v.append(Violation("STRUKTUR", "Pivots nicht zeitlich geordnet"))
+    if v:
+        return Check(PatternType.DOUBLE_THREE, False, v)
+
+    w_piv = pivots[0:4]   # W
+    y_piv = pivots[4:8]   # Y
+    notes: list[str] = []
+
+    def classify(seg: list[Pivot]) -> str | None:
+        for ptype in (PatternType.ZIGZAG, PatternType.FLAT):
+            if check(ptype, seg, cfg).ok:
+                return ptype.value
+        return None
+
+    w_kind = classify(w_piv)
+    y_kind = classify(y_piv)
+    if w_kind is None:
+        v.append(Violation("W_UNGUELTIG", "W ist keine gueltige einfache Korrektur"))
+    if y_kind is None:
+        v.append(Violation("Y_UNGUELTIG", "Y ist keine gueltige einfache Korrektur"))
+    if w_kind and y_kind:
+        notes.append(f"{w_kind}-{y_kind}")
+        if w_kind == "zigzag" and y_kind == "zigzag":
+            v.append(Violation(
+                "ZWEI_ZIGZAGS",
+                "Eine Kombination enthaelt nie mehr als einen Zigzag unter den "
+                "Aktionskomponenten - zwei Zigzags waeren ein Double Zigzag",
+            ))
+        if w_kind != y_kind:
+            notes.append("alternierend")
+
+    # Die Gesamtbewegung soll seitwaerts bleiben: Y darf nicht deutlich ueber
+    # das Ende von W hinauslaufen, sonst ist es keine Kombination sondern
+    # eine gerichtete Korrektur.
+    d_total = 1 if pivots[-1].price > pivots[0].price else -1
+    span_w = abs(pivots[3].price - pivots[0].price)
+    beyond = (pivots[7].price - pivots[3].price) * d_total
+    if span_w > 0 and beyond / span_w > 1.5:
+        v.append(Violation(
+            "NICHT_SEITWAERTS",
+            f"Y laeuft {beyond / span_w:.1f}x der W-Spanne ueber das W-Ende "
+            f"hinaus - das ist keine seitwaerts gerichtete Kombination",
+        ))
+
+    return Check(PatternType.DOUBLE_THREE, not v, v, notes)
+
+
 CHECKERS = {
+    PatternType.DOUBLE_THREE: check_double_three,
     PatternType.IMPULSE: check_impulse,
     PatternType.ZIGZAG: check_zigzag,
     PatternType.FLAT: check_flat,

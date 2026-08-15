@@ -468,3 +468,82 @@ allerdings ein Implementierungsdetail zu prüfen: der Squeeze wird derzeit zum
 Zeitpunkt der *Orderstellung* erfasst, nicht zum Zeitpunkt der *Ausführung* —
 und dazwischen können bis zu 60 Bars liegen. Der Befund ist damit vorerst
 nicht belastbar.
+
+---
+
+## F11 — Die W-X-Y-Zerlegung verschlechtert das Ergebnis, je genauer sie wird
+
+**Gemessen** auf 16 Instrumenten (1d), Training-Universum.
+`ew/forecast/substructure_signals.py`.
+
+Umgesetzt wurde die beschriebene Praxis: Zerlegung der Korrektur in ihre
+Teilwellen (3 = einfach, 7 = W-X-Y, 11 = dreifach nach Lesson 9), Projektion
+der laufenden Schlusswelle (c = a bzw. 1,618 a), zusätzliche Projektion der
+fünften Teilwelle der c, und Schnitt dieser Projektionen mit dem
+Retracement-Band der übergeordneten Welle.
+
+### Der Verlauf über vier Ausbaustufen
+
+| Variante | Trefferquote | Ø Gewinn | Erwartung |
+|---|---|---|---|
+| Einfaches Band 0,382–0,618 (F10) | 38,3 % | +2,44 R | **+0,306 R** |
+| Substruktur, Stop an der Schnittzone | 16,6 % | +6,23 R | −0,048 R |
+| Substruktur, Stop am weiten Band | 25,5 % | +3,44 R | +0,096 R |
+| Substruktur + korrekte W-X-Y-Erkennung | 23,9 % | +3,38 R | **+0,007 R** |
+
+**Je genauer die Zerlegung, desto schlechter das Ergebnis.** Das ist nicht
+das Muster, das entstünde, wenn die Umsetzung nur knapp danebenläge — dann
+wäre eine Verbesserung mit jeder Korrektur zu erwarten.
+
+Ebenso gegenläufig: mehr Konfluenz ist schlechter. Setups mit drei
+übereinstimmenden Projektionen liefern −0,299 R, solche mit zweien +0,034 R.
+
+### Zwei echte Korrekturen unterwegs
+
+**Der Stop gehört nicht an die Schnittzone.** Erste Umsetzung setzte ihn
+knapp unter den Schnitt der Projektionen. Das ergab eine sehr enge
+Verlustbegrenzung und dadurch beeindruckende Gewinne (+6,23 R im Schnitt),
+aber eine Trefferquote von nur 16,6 % — normales Rauschen reißt einen so
+engen Stop. Richtig ist: Einstieg an der Schnittzone (Präzision), Stop unter
+dem weiten Band 0,618–1,0 (Robustheit).
+
+**Kosten dominieren bei engen Stops.** Der durchschnittliche Verlust lag bei
+−1,30 R statt −1,00 R. Das ist kein Buchungsfehler: bei einem Risiko von
+1,7 % des Kurses macht ein Round-Trip von 20 bps bereits 12 % des Risikos aus.
+Wer den Stop verengt, um das R-Vielfache zu heben, kauft sich Kostendrag ein,
+der genau dort am stärksten wirkt, wo er am wenigsten auffällt.
+
+**Und ein Fehler in der Zerlegung selbst:** die erste Fassung nahm die
+gröbste Ebene mit mindestens zwei Teilwellen und ließ dadurch fast jede
+Kombination wie eine einfache Korrektur aussehen — nur 30 von 318 Strukturen
+wurden als W-X-Y erkannt. Nach der Korrektur (Vorzug für kanonische
+Wellenzahlen 3/7/11) sind es 666 von 2.194. Das Ergebnis wurde dadurch nicht
+besser, sondern schlechter.
+
+---
+
+## Gesamtbild: sechs unabhängige Tests, kein Edge-Nachweis
+
+| Test | Frage | Ergebnis |
+|---|---|---|
+| F5 | Häufen sich Fibonacci-Verhältnisse? | Lift 1,00 |
+| F7 | Schlägt Bestätigungs-Timing den Zufall? | t = 1,10 |
+| F8 | Sagt Richtlinien-Qualität den Ausgang vorher? | rho ≈ 0 |
+| F9 | Zahlt sich der engere Fraktal-Stop aus? | t = −5,70 |
+| F10 | Schlägt die Zonenprognose den Zufall? | t = 1,64 |
+| F11 | Verbessert die W-X-Y-Zerlegung? | nein, verschlechtert |
+
+Auffällig ist die Richtung: **jede zusätzliche Verfeinerung machte das
+Ergebnis schlechter, nicht besser.** Bei einem Verfahren, das im Kern trägt
+und nur ungenau umgesetzt ist, wäre das umgekehrte Muster zu erwarten.
+
+Was durchgehend bleibt, ist die Asymmetrie zwischen Long und Short
+(+0,57 R gegen −0,41 R in F11, ähnlich in allen anderen Tests). Sie ist in
+jedem getesteten Aufbau vorhanden und lässt sich vollständig durch das
+Trendumfeld des Universums erklären — sie ist kein Wellenphänomen.
+
+**Was damit nicht widerlegt ist:** die diskretionäre Komponente. Die
+Beschreibung des Vorgehens nennt sie an erster Stelle — „dabei kommt es auch
+mehr oder weniger auf mein Gefühl an, ob ich einen Trade nehmen möchte".
+Genau dieser Teil ist in keinem der sechs Tests enthalten, weil er nicht
+formalisiert wurde.
