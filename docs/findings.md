@@ -705,3 +705,67 @@ das laufende Positionsmanagement und die Instrumentenwahl.
 Die dokumentierte manuelle Performance wird durch diese Befunde weder erklärt
 noch widerlegt. Gezeigt ist allein: **die hier formalisierten Teile erklären
 sie nicht.**
+
+---
+
+## F14 — Unter Funding-Bedingungen: Frequenz ist der Engpass, nicht die Trefferquote
+
+**Gemessen** auf der empirischen R-Verteilung des Zonen-Systems (1.170 Trades,
+1d + 4h), Monte-Carlo über 20.000 Pfade. `scripts/challenge_analysis.py`.
+
+### Die Arithmetik des Ziels
+
+20 % pro Monat entsprechen **18,3 R pro Monat** bei 1 % Risiko (792 % p. a.).
+
+Das System erzeugt über das gesamte Portfolio hinweg **12 Trades pro Jahr** —
+also einen pro Monat. Bei einer Erwartung von +0,207 R sind das **0,21 R
+monatlich**.
+
+**Faktor 89.**
+
+Der Engpass ist damit eindeutig identifiziert und er ist nicht die
+Trefferquote, sondern die **Frequenz**. Selbst eine doppelt so gute Erwartung
+änderte an der Größenordnung nichts.
+
+### Challenge-Simulation
+
+Ziel 10 %, max. Drawdown 10 %, Tageslimit 5 %, 60 Tage. Bezugsgröße ohne jede
+Edge: 50 % (Verhältnis der Barriereabstände).
+
+| Risiko/Trade | bestanden | DD-Aus | Zeit-Aus |
+|---|---|---|---|
+| 1,0 % | 0,7 % | 0,0 % | **99,3 %** |
+| 2,0 % | 10,8 % | 0,9 % | 88,4 % |
+| 3,0 % | 20,2 % | 9,6 % | 70,3 % |
+| 5,0 % | 32,0 % | 62,5 % | 5,5 % |
+
+**Auf keinem Risikoniveau erreicht das System die 50 % eines edgelosen
+Zufallspfads.** Der Grund steht in der Spalte „Zeit-Aus": bei vernünftigem
+Risiko laufen 88–99 % der Pfade schlicht aus der Zeit, weil in 60 Tagen nur
+etwa zwei Trades stattfinden. Wer das Risiko so weit anhebt, dass die Zeit
+reicht, verliert stattdessen am Drawdown-Limit (62,5 % bei 5 %).
+
+Das ist die typische Falle eines Barriereproblems mit zu wenigen Ereignissen:
+Es existiert kein Risikoniveau, das beide Barrieren gleichzeitig respektiert.
+
+### Realistisch erreichbare Monatsrendite
+
+| Risiko/Trade | pro Monat | pro Jahr |
+|---|---|---|
+| 1 % | +0,21 % | +2,5 % |
+| 2 % | +0,41 % | +5,0 % |
+| 5 % | +1,03 % | +13,0 % |
+
+### Warum sich das nicht durch mehr Frequenz lösen lässt
+
+Naheliegender Einwand: schnellere Timeframes erzeugen mehr Trades. Befund F8
+hat das bereits gemessen — die Erwartung **sinkt** mit steigender Frequenz
+(1d +0,218 → 4h +0,116 → 1h +0,048 R), weil die Kosten gleich bleiben,
+während die Bewegungen kleiner werden.
+
+Rechnet man großzügig mit 1h-Frequenz (180 Trades/Monat bei +0,048 R), ergibt
+das 8,6 R monatlich statt der nötigen 18,3 — und diese Erwartung war im
+Placebo-Test ebenfalls nicht von Zufall unterscheidbar.
+
+**Es gibt in dieser Strategieklasse keine Parameterkombination, die das Ziel
+erreicht.** Das ist keine Frage der Kalibrierung, sondern der Größenordnung.
