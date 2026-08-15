@@ -392,3 +392,79 @@ den Unterschied macht, liegt außerhalb dessen, was bisher formalisiert wurde.
 - Kein Outcome-Modell: bisher wird jedes regelkonforme Setup gleich gewichtet,
   statt die Erfolgswahrscheinlichkeit aus Merkmalen zu lernen.
 - Das Holdout-Universum ist unberührt.
+
+---
+
+## F10 — Das Zonen-System ist besser, aber der Vorsprung hält der Datenmenge nicht stand
+
+**Gemessen** auf 16 Instrumenten (1d) bzw. 32 Kombinationen (1d + 4h),
+Training-Universum. `scripts/backtest_zones.py`, `scripts/test_edge_zones.py`.
+
+### Der Architekturwechsel war richtig
+
+Die Beschreibung des tatsächlichen Vorgehens hat einen Grundfehler
+offengelegt: gebaut war ein **Bestätigungssystem**, das auf den belegten
+Wendepunkt wartet. Der Analyst wartet aber nicht — er projiziert die Zone und
+legt eine Limit-Order hinein.
+
+Das erklärt die vorherigen Negativbefunde rückwirkend:
+
+- Befund F1 (Bestätigung trifft ~1,5-mal so spät ein wie die Welle dauert)
+  ist für ein Limit-System **bedeutungslos**, war für das Bestätigungssystem
+  aber der Killer.
+- Das Risiko hängt an der Zonenbreite statt an Welle 1.
+- Der Placebo-Test in F7 prüfte das Timing *nach* Bestätigung. Die Edge liegt,
+  wenn überhaupt, in der Zonenprognose — es wurde die falsche Sache getestet.
+
+Und die Wirkung ist messbar: der durchschnittliche Gewinn steigt von **+1,68 R
+auf +2,44 R**, die Erwartung von +0,218 auf +0,306 R. Der Mechanismus greift
+genau wie vorhergesagt.
+
+### Der Placebo-Test entzieht dem trotzdem die Grundlage
+
+| Datensatz | n | echt | Placebo (gewichtet) | Differenz | t |
+|---|---|---|---|---|---|
+| 1d | 553 | +0,306 R | +0,143 R | +0,162 R | **1,91** |
+| 1d + 4h | 1.170 | +0,207 R | +0,120 R | **+0,087 R** | **1,64** |
+
+Auf 1d allein lag die Differenz knapp unter der Signifikanzschwelle. Daraus
+ergab sich eine testbare Vorhersage: *ist der Effekt echt, steigt t mit mehr
+Daten; ist er Rauschen, fällt er.* Bei verdoppelter Stichprobe hätte t auf
+etwa 2,7 steigen müssen — tatsächlich **fiel er auf 1,64**, und die
+Effektgröße halbierte sich. Das ist die Signatur von Rauschen.
+
+### Methodischer Hinweis: das Simpson-Paradox war real
+
+Der rohe Vergleich ergab +0,212 R bei t = 2,49 — scheinbar signifikant. Der
+Long-Anteil unterschied sich aber zwischen echt (60,2 %) und Placebo (55,1 %),
+weil die Fill-Quoten je Richtung abweichen. Da Longs im getesteten Universum
+verdienen und Shorts verlieren, entstand der Unterschied teilweise allein aus
+dem Mix. Richtungsgewichtet blieben +0,162 R bei t = 1,91.
+
+**Ohne diese Korrektur hätte hier ein signifikantes Ergebnis gestanden, das
+keines ist.** Der Test berichtet seither beide Werte.
+
+### Was jetzt noch fehlt — und zwar substanziell
+
+Der wichtigste Teil des beschriebenen Vorgehens ist **noch nicht
+implementiert**: die Zerlegung der Korrektur in eine **W-X-Y-Kombination**
+(z. B. Flat–ZigZag–ZigZag) und die Projektion des Y-Endes aus der internen
+5-3-5-Struktur des abschließenden ZigZags, abgeglichen über drei Zyklusgrade.
+
+Was hier getestet wurde, ist deutlich gröber: ein Retracement-Band von Welle 1
+(0,382–0,618) plus drei grobe Stützprojektionen. Die beschriebene Präzision
+entsteht aber gerade dadurch, dass die Zielzone aus der *Substruktur der
+Korrektur selbst* projiziert wird — aus der c-Welle des Y, deren 5-Teilung und
+der 5-der-5 —, nicht aus einem Standardband der übergeordneten Welle.
+
+Es gibt in der Regel-Engine bislang **kein Kombinationsmuster (W-X-Y)**. Das
+ist die größte verbliebene Lücke zwischen Modell und beschriebener Praxis.
+
+### Nebenbefund: der Squeeze wirkt umgekehrt
+
+Entgegen der Erwartung liefern Setups mit aktivem Squeeze eine **schlechtere**
+Erwartung (+0,082 R gegen +0,344 R ohne). Bevor daraus etwas folgt, ist
+allerdings ein Implementierungsdetail zu prüfen: der Squeeze wird derzeit zum
+Zeitpunkt der *Orderstellung* erfasst, nicht zum Zeitpunkt der *Ausführung* —
+und dazwischen können bis zu 60 Bars liegen. Der Befund ist damit vorerst
+nicht belastbar.
