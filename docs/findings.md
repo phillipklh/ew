@@ -205,3 +205,87 @@ Dreieck-Labelings auf BTCUSDT 1d von **333 auf 39** (−88 %), ohne dass ein
 Regel-Test bricht. Konvergenz der Begrenzungslinien allein — die im Buch
 genannte Konstruktion über die Endpunkte von a/c und b/d — reicht als
 Kriterium nicht aus.
+
+---
+
+## F7 — Die erste Signalversion zeigt **keine** nachweisbare Edge
+
+**Das ist das Go/No-Go-Ergebnis für M4 — und es fällt negativ aus.**
+
+**Gemessen** auf 16 Instrumenten (Krypto + Aktien + Indizes), Timeframe 1d,
+746 Trades, Kontextebenen 4/5/6, Trigger-Offset 2, Ziel 3R, Breakeven ab 1R,
+10 bps Kosten je Seite. `scripts/backtest.py`, `scripts/test_edge.py`.
+
+### Der Backtest allein sieht brauchbar aus
+
+| Kennzahl | Wert |
+|---|---|
+| Erwartungswert | +0,218 R / Trade |
+| Trefferquote | 38,2 % |
+| Ø Gewinn / Ø Verlust | +1,68 R / −0,69 R |
+| Summe | +162,5 R |
+| positive Instrumente | 13 von 16 |
+
+Der mittlere Verlust von −0,69 R zeigt, dass der Breakeven-Mechanismus wirkt —
+die Voraussetzung der Drawdown-Rechnung ist konstruktiv erreichbar.
+
+### Der Placebo-Test entzieht dem die Grundlage
+
+Ein positiver Backtest belegt für sich nichts. Auf einem Universum aus Aktien
+im Säkularaufwärtstrend erzeugt jedes long-lastige System Gewinne. Also:
+zu jedem echten Signal 20 Placebo-Trades auf demselben Instrument, in
+derselben Richtung, mit demselben relativen Stop-Abstand und derselben
+Ausstiegsregel — nur zu einem **zufälligen Zeitpunkt**. Alles bleibt gleich
+außer der Information über den Einstiegszeitpunkt.
+
+| Richtung | n | echt | Placebo | Differenz | t |
+|---|---|---|---|---|---|
+| long | 445 | +0,637 R | **+0,502 R** | +0,134 | 1.89 |
+| short | 301 | −0,401 R | **−0,311 R** | −0,090 | −1.74 |
+| **gesamt** | 746 | +0,218 R | +0,162 R | **+0,056** | **1.10** |
+
+**Kein signifikanter Unterschied.** Der Placebo verdient auf der Long-Seite
++0,502 R allein dadurch, dass das Universum gestiegen ist. Die gesamte
+scheinbare Profitabilität erklärt sich aus zwei Quellen, die nichts mit
+Elliott zu tun haben: dem Richtungsübergewicht (445 Long gegen 301 Short) und
+dem Trendumfeld der getesteten Instrumente.
+
+Hinzu kommt Survivorship-Bias: AAPL, NVDA, TSLA und META sind die Gewinner
+von heute. Ein long-lastiges System darauf zu testen, ist strukturell
+optimistisch.
+
+### Zusätzlich: die Frequenz reicht bei weitem nicht
+
+Auf 1d erzeugt das System **2–3 Trades pro Instrument und Jahr**. Für die
+Zielrendite werden **70 R pro Jahr** gebraucht; erreicht werden bei
++0,218 R/Trade rund **0,5 R pro Instrument-Jahr**. Selbst wenn die Edge echt
+wäre, bräuchte es dafür über hundert unkorrelierte Instrumente — was die
+Drawdown-Vorgabe wieder sprengen würde.
+
+### Was daraus folgt — und was nicht
+
+**Kein Urteil über die Elliott-Wellen-Theorie.** Getestet wurde *diese eine,
+bewusst einfache Signalversion*: feste Kontextebenen, fester Trigger-Offset,
+festes 3R-Ziel — und **ohne jede Qualitätsbewertung**. Jedes regelkonforme
+Setup wurde genommen, unabhängig von Substruktur, Stabilität oder Rang.
+
+**Klares Urteil über den nächsten Schritt.** Es wäre falsch, jetzt an
+Parametern zu drehen, bis die Zahlen stimmen — bei dieser Zahl an
+Stellschrauben findet sich immer eine Kombination, und der Placebo-Test würde
+sie sofort wieder entlarven. Sinnvoll ist genau eine Frage:
+
+> Sagt die *Qualität* einer Zählung (Substruktur-Konsistenz, Label-Stabilität,
+> Rang) den Ausgang des Trades vorher?
+
+Trifft das zu, liegt die Edge in der Selektion, nicht im Setup-Typ — und der
+Placebo-Test muss auf der selektierten Teilmenge erneut bestanden werden.
+Trifft es nicht zu, ist die These in dieser Form widerlegt, und das ist ein
+Ergebnis, kein Scheitern.
+
+### Nebenbefund: Auswertungsfehler, der das Bild verzerrt hätte
+
+Die erste Fassung der Portfoliobewertung rechnete Trades pro Jahr über
+Bar-Indizes eines beliebigen Referenzinstruments. Da der S&P 500 bis 1927
+zurückreicht und ADA erst 2018 beginnt, wurde die Handelsfrequenz um etwa das
+Zwölffache überschätzt (90 statt 7,6 Trades/Jahr). `Trade` trägt jetzt echte
+Zeitstempel, und die Auswertung rechnet auf Kalenderbasis.
