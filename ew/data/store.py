@@ -103,3 +103,33 @@ def available(root: Path = DEFAULT_ROOT) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["source", "symbol", "timeframe"])
+
+
+def usable(
+    *,
+    root: Path = DEFAULT_ROOT,
+    min_bars: int = 0,
+    timeframes: tuple[str, ...] | None = None,
+    exclude_holdout: bool = False,
+) -> list[tuple[str, str, str]]:
+    """Datensaetze, die eine Auswertung verwenden darf.
+
+    Filtert zwingend auf `integrity_ok`. Ein Pruefsystem, dessen Ergebnis von
+    den Auswertungen ignoriert wird, ist wirkungslos - genau so ist zunaechst
+    WTI mit seinen negativen Preisen aus April 2020 in eine Analyse geraten,
+    obwohl der Check ihn korrekt als fehlerhaft markiert hatte.
+    """
+    from .universe import HOLDOUT
+
+    out: list[tuple[str, str, str]] = []
+    for d in read_manifest(root).get("datasets", {}).values():
+        if not d.get("integrity_ok", False):
+            continue
+        if d.get("n_bars", 0) < min_bars:
+            continue
+        if timeframes and d["timeframe"] not in timeframes:
+            continue
+        if exclude_holdout and d["symbol"] in HOLDOUT:
+            continue
+        out.append((d["source"], d["symbol"], d["timeframe"]))
+    return sorted(out)

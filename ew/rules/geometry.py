@@ -29,7 +29,15 @@ def log_lengths(pivots: list[Pivot]) -> list[float]:
     120k) ist der arithmetische Vergleich zweier Wellen irrefuehrend: eine
     spaete Welle wirkt allein durch das Niveau riesig. Das Buch formuliert
     die Regel "Welle 3 ist nie die kuerzeste" ausdruecklich prozentual.
+
+    Nicht-positive Preise sind kein theoretischer Sonderfall: WTI-Futures
+    settelten im April 2020 bei -37,63. Dort ist der Log-Raum undefiniert,
+    und es wird auf arithmetische Laengen zurueckgefallen, statt still NaN
+    zu erzeugen - NaN wuerde jeden Regelvergleich unbemerkt zu False machen
+    und damit Muster stillschweigend durchwinken.
     """
+    if any(p.price <= 0 for p in pivots):
+        return lengths(pivots)
     return [abs(np.log(b.price) - np.log(a.price)) for a, b in zip(pivots, pivots[1:])]
 
 

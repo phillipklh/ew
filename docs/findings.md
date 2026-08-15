@@ -101,6 +101,101 @@ konsistenten, arithmetisch widersprüchlichen Wellen.
 
 ---
 
+## F5 — Fibonacci-Verhältnisse sind in diesen Daten kein verwertbares Signal
+
+**Das ist der Befund mit den weitreichendsten Folgen für den Plan.**
+
+**Gemessen** auf 30 integritätsgeprüften Datensätzen (Krypto + Gold, 4h/1d,
+Holdout ausgeschlossen), 63.138 regelkonforme Labelings gegen 189.585
+Labelings aus Block-Bootstrap-Surrogaten. `scripts/test_fibonacci.py`.
+
+Verglichen wird die Trefferquote nahe eines Fibonacci-Levels (±5 % relativ)
+gegen zwei Bezugsgrößen: **Surrogate** mit identischer Renditestatistik, aber
+ohne Wellenstruktur, und die **geometrische Abdeckung** — der Anteil des
+Wertebereichs, den die Toleranzbänder ohnehin überdecken.
+
+| Kennzahl | n | beobachtet | Surrogat | Abdeckung | Lift | z |
+|---|---|---|---|---|---|---|
+| w2_retrace_w1 | 10.274 | 31,6 % | 32,3 % | 31,1 % | 0.98 | −1.4 |
+| w4_retrace_w3 | 10.289 | 38,4 % | 38,2 % | 34,7 % | 1.01 | 0.5 |
+| w3_ext_w1 | 10.278 | 37,0 % | 35,7 % | 20,9 % | 1.03 | 2.2 |
+| w5_ext_w1 | 10.298 | 18,3 % | 16,8 % | 23,4 % | 1.09 | **3.3** |
+| w5_ext_w3 | 10.281 | 9,8 % | 10,1 % | 34,0 % | 0.97 | −0.8 |
+| b_retrace_a | 51.702 | 13,0 % | 13,0 % | 5,0 % | 1.00 | −0.1 |
+| c_ext_a | 51.832 | 31,8 % | 32,2 % | 19,1 % | 0.99 | −1.5 |
+
+**Median-Lift: 1.00.**
+
+Beispiel zur Lesart: w2 liegt in 31,6 % der Fälle nahe einem Fib-Retracement.
+Das klingt nach einem starken Effekt — bis man sieht, dass die Toleranzbänder
+31,1 % des Wertebereichs überdecken und das strukturlose Surrogat auf 32,3 %
+kommt. Die Treffer entstehen also vollständig durch die Bandbreite der
+Toleranz, nicht durch Wellenstruktur.
+
+### Robustheitsprüfung
+
+Naheliegender Einwand: der Test läuft über *alle* regelkonformen Labelings,
+von denen die meisten falsch sind — ein echtes Signal könnte darin untergehen.
+Auf die Teilmenge mit **perfekter Substruktur-Konsistenz** eingeschränkt
+(n = 3.195) steigt der Median-Lift nur auf 1.06, und kein z-Wert übersteht die
+Bonferroni-Korrektur. Der Befund ist also nicht ein Artefakt der falschen
+Labelings.
+
+### Was das heißt — und was nicht
+
+Einzig `w5_ext_w1` übersteht die Korrektur für Mehrfachtests (z = 3.3 gegen
+Schwelle 2.69). Der Effekt ist mit +1,5 Prozentpunkten allerdings so klein,
+dass er als Merkmal einer Handelsentscheidung nicht trägt.
+
+**Nicht** gezeigt ist, dass Fibonacci-Level *keinerlei* Rolle spielen. Getestet
+wurde die unbedingte Häufung von Verhältniszahlen an Fib-Levels. Nicht
+getestet ist, ob ein Fib-Level *bedingt auf eine korrekte Zählung*
+Prognosewert für den weiteren Verlauf hat — das beantwortet erst das
+Outcome-Modell über Forward-Payoff.
+
+**Gezeigt ist:** Das Merkmal „Verhältnis liegt nahe einem Fibonacci-Level"
+ist als Bestandteil der Bewertungsfunktion durch diese Daten nicht
+gerechtfertigt. Es einzubauen hieße, Rauschen zu gewichten.
+
+### Folge für den Plan
+
+Die ursprünglich für M3 vorgesehenen Fibonacci-Priors entfallen als
+Score-Bestandteil. Die Bewertungsfunktion stützt sich stattdessen auf die
+Größen, die messbar Information tragen:
+
+- **Substruktur-Konsistenz** — zerfällt jede Welle in die erwartete Unterteilung
+- **Label-Stabilität** — kippt die Zählung, wenn eine Bar dazukommt
+- **Forward-Payoff** — wird das projizierte Ziel vor der Invalidierung erreicht
+
+Das ist keine Verkleinerung des Vorhabens, sondern die Vermeidung einer
+teuren Sackgasse: eine auf Fibonacci gestützte Bewertung hätte im Backtest
+plausibel ausgesehen und wäre live wirkungslos gewesen.
+
+---
+
+## F6 — WTI hat negative Preise, und Integritätsbefunde müssen erzwungen werden
+
+`CL=F` (WTI) enthält am 20./21. April 2020 **negative Settlement-Preise**
+(Minimum −37,63). Für ein log-basiertes Framework ist das fatal: `log(-37,63)`
+ist NaN, und ein NaN-Vergleich macht jede Regelprüfung still zu `False` —
+Muster würden unbemerkt durchgewinkt statt verworfen.
+
+Zwei Lehren:
+
+1. `geometry.log_lengths` fällt bei nicht-positiven Preisen explizit auf
+   arithmetische Längen zurück, statt still NaN zu erzeugen.
+2. Der Integritätscheck hatte den Datensatz korrekt als fehlerhaft markiert
+   (`integrity_ok=False`) — aber die Auswertung hat ihn trotzdem verwendet,
+   weil sie nur nach Bar-Anzahl filterte. **Ein Prüfsystem, dessen Ergebnis
+   die Auswertungen ignorieren, ist wirkungslos.** Deshalb gibt es jetzt
+   `store.usable()`, das zwingend auf `integrity_ok` filtert; Auswertungen
+   greifen nicht mehr direkt auf das Manifest zu.
+
+Nebenbefund: `CL=F 1d` enthält zusätzlich 7 Bars, bei denen High/Low die
+Open/Close-Spanne nicht umschließen — eine Datenqualitätsschwäche der Quelle.
+
+---
+
 ## F4 — Das Dreieck braucht die Überlappungsbedingung
 
 Ohne die Bedingung, dass jedes Extrem innerhalb des übernächsten bleibt
