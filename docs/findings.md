@@ -547,3 +547,79 @@ Beschreibung des Vorgehens nennt sie an erster Stelle — „dabei kommt es auch
 mehr oder weniger auf mein Gefühl an, ob ich einen Trade nehmen möchte".
 Genau dieser Teil ist in keinem der sechs Tests enthalten, weil er nicht
 formalisiert wurde.
+
+---
+
+## F12 — Es gibt Prognosekraft, aber sie ist Marktbeta, nicht Struktur
+
+**Der abschließende Test**, und der aussagekräftigste. `scripts/experiment_structure.py`.
+
+Nach sechs erfolglosen regelbasierten Tests wurde das Elliott-Regelwerk
+fallengelassen und das Lattice nur noch als **Merkmalsgenerator** verwendet.
+Zwei Modelle, identische Hyperparameter, identische Zeitschnitte, Purged +
+Embargoed Walk-Forward über 38.292 Samples (16 Instrumente, 1928–2026):
+
+- **A** — Trend, Momentum, Volatilität
+- **B** — dasselbe plus 29 Strukturmerkmale aus dem Lattice
+
+Labels über Dreifach-Barriere (Ziel 3R, Stop 2 ATR, Zeitgrenze 120 Bars),
+beide Richtungen gleich häufig erzeugt.
+
+### Ergebnis 1: Strukturmerkmale bringen keinen Zuwachs
+
+| Kennzahl | Modell A | Modell B | Delta |
+|---|---|---|---|
+| Rangkorrelation | +0,1517 | +0,1460 | **−0,006** |
+| Erwartung Top-50 % | +0,335 R | +0,327 R | −0,008 |
+| Erwartung Top-10 % | +0,435 R | +0,483 R | +0,048 (t = 0,99) |
+
+Bemerkenswert: das Modell **nutzt** die Strukturmerkmale intensiv — sie
+stellen 53,3 % der Gesamtwichtigkeit, mit `age_rel_s6`, `swing_atr_s6` und
+`retrace_s6` unter den stärksten. Out-of-sample übersetzt sich das in nichts.
+Genau so sieht es aus, wenn Merkmale beim Anpassen helfen und beim
+Vorhersagen nicht.
+
+### Ergebnis 2: Die gesamte Prognosekraft ist Richtungswahl
+
+Beide Modelle sagen hochsignifikant vorher (rho = 0,15, p < 0,0001), und das
+oberste Dezil verdient +0,44 R gegen +0,08 R Basis — das Fünffache. Die
+Richtungskontrolle löst das auf:
+
+**Der Long-Anteil im obersten Dezil beträgt 97,0 %** (Stichprobe: 50,0 %).
+
+| Richtung | n | Top-Dezil | Basis derselben Richtung | Lift | t |
+|---|---|---|---|---|---|
+| long | 3.096 | +0,456 R | **+0,413 R** | +0,043 | 1,14 |
+| short | 95 | −0,233 R | −0,255 R | +0,022 | 0,14 |
+
+Zufällig long zu gehen bringt in diesem Universum bereits **+0,413 R**.
+Bedingt auf die Richtung fügt das Modell +0,043 R hinzu — statistisch nicht
+unterscheidbar von null.
+
+Nach Anlageklasse betrachtet stammt der Effekt entsprechend aus dem
+Trendumfeld: Aktien/Indizes +0,471 R gegen +0,079 R Basis, Krypto +0,324 R
+gegen +0,078 R.
+
+### Was das heißt
+
+Die Frage „haben die Trades Zukunft?" hat damit eine unangenehm klare
+Antwort: **Prognosekraft ja — aber es ist Marktbeta.** Das Modell hat gelernt,
+in einem Universum long zu gehen, das 98 Jahre lang gestiegen ist. Das ist
+keine Strategie, das ist Risikoprämie, und sie ist mit einem Indexkauf
+billiger zu haben.
+
+Weder Trend- noch Strukturmerkmale liefern *innerhalb einer Richtung*
+verwertbare Information. Für die Strukturmerkmale gilt das doppelt: sie
+verbessern nicht einmal gegenüber dem reinen Trendmodell.
+
+### Der eine verbleibende saubere Test
+
+Das getestete Universum ist von Beta dominiert — der S&P 500 reicht bis 1927
+zurück. Ein Test auf **trendbereinigten Daten** (Überschussrendite gegenüber
+dem eigenen gleitenden Mittel oder gegenüber dem Index) würde diese Erklärung
+konstruktiv ausschließen: dort kann ein Aufwärtsdrift per Konstruktion nichts
+mehr beitragen, und übrig bliebe allein die Frage, ob die Struktur relative
+Bewegungen vorhersagt.
+
+Das ist der einzige Test, der nach diesen zwölf Befunden noch etwas anderes
+zeigen könnte als das bisherige Bild.
