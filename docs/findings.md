@@ -623,3 +623,85 @@ Bewegungen vorhersagt.
 
 Das ist der einzige Test, der nach diesen zwölf Befunden noch etwas anderes
 zeigen könnte als das bisherige Bild.
+
+---
+
+## F13 — Trendbereinigt: kein Signal, und der eine positive Befund hält dem Holdout nicht stand
+
+**Der abschließende Test.** `scripts/experiment_structure.py --label ...`
+
+Befund F12 ließ eine Erklärung offen: das Universum ist von Marktbeta
+dominiert. Also dieselbe Analyse mit zwei trendbereinigten Labels.
+
+### Bereinigung 1: Eigendrift entfernt (`label_excess`)
+
+Von der Vorwärtsrendite wird die instrumentspezifische Drift über denselben
+Zeitraum abgezogen. Basis-Erwartung danach exakt **+0,0000** — die
+Bereinigung greift per Konstruktion.
+
+| Modell | rho | p | Top-10 % |
+|---|---|---|---|
+| A Trend | +0,0020 | 0,72 | +0,127 |
+| B +Struktur | **−0,0254** | <0,0001 | −0,172 |
+
+Ohne Drift hat **auch das Trendmodell keine Prognosekraft mehr** (p = 0,72).
+Die Strukturmerkmale machen es signifikant schlechter (Top-Dezil −0,299,
+t = −2,75) — die Signatur eines Modells, das in der Anpassung Muster findet,
+die sich out-of-sample umkehren.
+
+### Bereinigung 2: zusätzlich Marktbewegung entfernt (`label_xs`)
+
+Hier wird zusätzlich abgezogen, was alle Instrumente zum selben Zeitpunkt
+gemeinsam getan haben. Übrig bleibt die relative Bewegung — das, was ein
+marktneutrales Long/Short-Buch vereinnahmt.
+
+| Modell | rho | p | Top-50 % | Top-10 % |
+|---|---|---|---|---|
+| A Trend | +0,034 | 0,005 | +0,054 | −0,050 |
+| **B +Struktur** | **+0,076** | <0,0001 | +0,177 | +0,239 |
+
+**Erstmals ein positiver Strukturbeitrag:** die Rangkorrelation verdoppelt
+sich. Die Richtungskontrolle ist sauber (52,2 % Long im obersten Dezil), was
+bei einem marktneutralen Label auch so sein muss.
+
+### Der Holdout entscheidet — negativ
+
+Genau für diesen Moment blieben fünf Instrumente über die gesamte Entwicklung
+unberührt. Trainiert auf den bekannten, getestet auf den reservierten:
+
+| Modell | n | rho | p | Top-10 % |
+|---|---|---|---|---|
+| A Trend | 5.404 | −0,007 | 0,63 | −0,408 |
+| **B +Struktur** | 5.404 | **−0,106** | <0,0001 | **−0,776** |
+
+Auf ungesehenen Instrumenten sind die Vorhersagen des Strukturmodells
+**negativ korreliert** mit dem Ausgang. Der Befund aus dem Trainingsuniversum
+repliziert nicht — er kehrt sich um.
+
+Das ist keine Nullaussage, sondern eine stärkere: das Modell hat etwas
+gelernt, das auf den Trainingsinstrumenten gilt und anderswo das Gegenteil
+bewirkt. Genau das ist Überanpassung, und genau dafür war das Holdout
+reserviert.
+
+### Damit ist die Frage beantwortet
+
+Über acht unabhängige Testanlagen hinweg — regelbasiert wie gelernt,
+bestätigend wie antizipativ, mit und ohne Trendbereinigung, mit und ohne
+Marktneutralisierung — findet sich **kein Strukturbeitrag, der out-of-sample
+Bestand hat.** Der einzige positive Befund verschwand beim ersten echten
+Generalisierungstest.
+
+Die Prognosekraft, die in F12 sichtbar war, ist vollständig Marktbeta: sie
+verschwindet, sobald die Drift entfernt wird.
+
+### Was ausdrücklich nicht gezeigt ist
+
+Getestet wurde eine bestimmte Formalisierung auf einem bestimmten Universum:
+Pivot-Lattice als Strukturbeschreibung, 25 Instrumente, Tagesdaten,
+Dreifach-Barriere-Labels, feste Haltedauern. Nicht getestet ist die
+diskretionäre Ebene — die Auswahl, welche Situation überhaupt handelbar ist,
+das laufende Positionsmanagement und die Instrumentenwahl.
+
+Die dokumentierte manuelle Performance wird durch diese Befunde weder erklärt
+noch widerlegt. Gezeigt ist allein: **die hier formalisierten Teile erklären
+sie nicht.**

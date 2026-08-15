@@ -42,24 +42,53 @@ from ew.ml.dataset import STRUCT_FEATURES, TREND_FEATURES, build  # noqa: E402
 MAX_BARS = 120
 
 
-def make_dataset(timeframes, step) -> pd.DataFrame:
+def make_dataset(timeframes, step, include_holdout=False) -> pd.DataFrame:
     frames = []
     for tf in timeframes:
         for src, sym, t in store.usable(min_bars=800, timeframes=(tf,),
-                                        exclude_holdout=True):
+                                        exclude_holdout=not include_holdout):
             df = store.load(src, sym, t)
             lat = pivots.build(df)
             d = build(lat, df, sym, t, step=step, max_bars=MAX_BARS)
             if len(d):
                 frames.append(d)
-    return pd.concat(frames, ignore_index=True).sort_values("ts")
+    data = pd.concat(frames, ignore_index=True).sort_values("ts")
+    return _add_cross_sectional(data)
+
+
+def _add_cross_sectional(data: pd.DataFrame) -> pd.DataFrame:
+    """Querschnittsbereinigtes Label: Abzug der gleichzeitigen Marktbewegung.
+
+    Waehrend `label_excess` nur die Eigendrift des Instruments entfernt,
+    entfernt dieses Label zusaetzlich das, was zur selben Zeit alle
+    Instrumente gemeinsam getan haben. Damit koennen weder ein
+    Saekulartrend noch eine gemeinsame Faktorbewegung (Risk-on-Phasen,
+    Krypto-Zyklen) noch etwas beitragen - uebrig bleibt allein die relative
+    Bewegung eines Instruments gegenueber seinen Vergleichswerten.
+
+    Das ist zugleich das, was ein marktneutrales Long/Short-Buch
+    tatsaechlich vereinnahmt.
+    """
+    up = data[data["direction"] > 0]
+    # Marktmittel je Zeitpunkt, gebildet aus der Long-Sicht.
+    mkt = up.groupby("ts")["label_fwd"].mean().rename("mkt")
+    data = data.merge(mkt, left_on="ts", right_index=True, how="left")
+    n_per_ts = up.groupby("ts").size().rename("n_ts")
+    data = data.merge(n_per_ts, left_on="ts", right_index=True, how="left")
+    data["label_xs"] = data["label_fwd"] - data["direction"] * data["mkt"]
+    # Zeitpunkte mit nur einem Instrument liefern kein sinnvolles Marktmittel.
+    data.loc[data["n_ts"] < 3, "label_xs"] = np.nan
+    return data
+
+
+LABEL = "label_r"
 
 
 def fit_predict(train, test, feats, seed=0):
     import lightgbm as lgb
 
     x_tr = train[feats].to_numpy("float32")
-    y_tr = train["label_r"].to_numpy("float64")
+    y_tr = train[LABEL].to_numpy("float64")
     x_te = test[feats].to_numpy("float32")
 
     m = lgb.LGBMRegressor(
@@ -99,7 +128,7 @@ def walk_forward(data: pd.DataFrame, feats: list[str], n_folds: int = 5):
 def report(name, data, preds):
     mask = np.isfinite(preds)
     d, p = data[mask], preds[mask]
-    y = d["label_r"].to_numpy("float64")
+    y = d[LABEL].to_numpy("float64")
 
     rho, p_rho = stats.spearmanr(p, y)
     # Wirtschaftlich relevanter als die Korrelation: was verdient das
@@ -115,21 +144,85 @@ def report(name, data, preds):
             "y": y, "pred": p, "n": len(y)}
 
 
+def _holdout_test(data: pd.DataFrame) -> int:
+    """Training auf bekannten, Test auf reservierten Instrumenten.
+
+    Der schaerfste verfuegbare Test: die Holdout-Instrumente wurden waehrend
+    der gesamten Entwicklung nie angefasst. Haelt ein Effekt hier, ist er
+    nicht das Ergebnis der vielen Entscheidungen, die unterwegs am
+    Trainingsuniversum getroffen wurden.
+    """
+    from ew.data.universe import HOLDOUT
+
+    feats_a = [c for c in TREND_FEATURES if c in data.columns] + ["direction"]
+    feats_b = feats_a + [c for c in STRUCT_FEATURES if c in data.columns]
+
+    tr = data[~data["symbol"].isin(HOLDOUT)]
+    te = data[data["symbol"].isin(HOLDOUT)]
+    print(f"Label: {LABEL}")
+    print(f"Training  {len(tr):,} Samples, {tr['symbol'].nunique()} Instrumente")
+    print(f"Holdout   {len(te):,} Samples, {te['symbol'].nunique()} Instrumente: "
+          f"{sorted(te['symbol'].unique())}")
+    print(f"Basis-Erwartung Holdout: {te[LABEL].mean():+.4f}\n")
+
+    print(f"{'Modell':<12}{'n':>8}{'rho':>9}{'p':>9}{'top50%':>11}{'top10%':>11}")
+    print("-" * 60)
+    res = {}
+    for name, feats in (("A Trend", feats_a), ("B +Struktur", feats_b)):
+        pred, _ = fit_predict(tr, te, feats)
+        y = te[LABEL].to_numpy("float64")
+        rho, p_rho = stats.spearmanr(pred, y)
+        t50 = y[pred >= np.percentile(pred, 50)]
+        t10 = y[pred >= np.percentile(pred, 90)]
+        res[name] = (rho, t10, y)
+        print(f"{name:<12}{len(y):>8}{rho:>+9.4f}{p_rho:>9.4f}"
+              f"{t50.mean():>+11.4f}{t10.mean():>+11.4f}")
+
+    (_, a10, _), (_, b10, _) = res["A Trend"], res["B +Struktur"]
+    d = b10.mean() - a10.mean()
+    se = np.sqrt(a10.var(ddof=1) / len(a10) + b10.var(ddof=1) / len(b10))
+    print(f"\n  Top-Dezil B gegen A: {d:+.4f}   "
+          f"t = {d / se if se > 0 else np.nan:.2f}")
+    print("\n  Die Holdout-Instrumente waren waehrend der gesamten")
+    print("  Entwicklung nie Teil einer Auswertung.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--timeframes", nargs="*", default=["1d"])
     ap.add_argument("--step", type=int, default=5)
     ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--holdout-test", action="store_true",
+                    help="Auf Trainingsinstrumenten trainieren, auf den "
+                         "reservierten Holdout-Instrumenten testen")
+    ap.add_argument("--label", default="label_r",
+                    choices=["label_r", "label_excess", "label_xs"],
+                    help="label_r = Dreifach-Barriere (enthaelt Drift), "
+                         "label_excess = Eigendrift entfernt, "
+                         "label_xs = zusaetzlich Marktbewegung entfernt")
     args = ap.parse_args()
+    global LABEL
+    LABEL = args.label
 
-    data = make_dataset(args.timeframes, args.step)
+    data = make_dataset(args.timeframes, args.step,
+                        include_holdout=args.holdout_test)
+    data = data[np.isfinite(data[LABEL])].reset_index(drop=True)
+
+    if args.holdout_test:
+        return _holdout_test(data)
     feats_a = [c for c in TREND_FEATURES if c in data.columns] + ["direction"]
     feats_b = feats_a + [c for c in STRUCT_FEATURES if c in data.columns]
 
     print(f"Samples: {len(data):,}   Instrumente: {data['symbol'].nunique()}")
     print(f"Zeitraum: {data['ts'].min().date()} .. {data['ts'].max().date()}")
     print(f"Merkmale A: {len(feats_a)}   B: {len(feats_b)}")
-    print(f"Basis-Erwartung (alle Samples): {data['label_r'].mean():+.3f} R\n")
+    print(f"Label: {LABEL}")
+    print(f"Basis-Erwartung (alle Samples): {data[LABEL].mean():+.4f}")
+    for k, nm in ((1, "long"), (-1, "short")):
+        x = data.loc[data["direction"] == k, LABEL]
+        print(f"    {nm}: {x.mean():+.4f}  (n={len(x):,})")
+    print()
 
     print(f"{'Modell':<10}{'n_test':>8}{'rho':>9}{'p':>9}"
           f"{'alle':>10}{'top50%':>11}{'top10%':>11}")
@@ -170,8 +263,8 @@ def main() -> int:
     print(f"{'Richtung':<10}{'n':>7}{'Top':>10}{'Basis':>10}{'Lift':>9}{'t':>7}")
     print("-" * 53)
     for k, nm in ((1, "long"), (-1, "short")):
-        x = top.loc[top["direction"] == k, "label_r"].to_numpy()
-        b = dd.loc[dd["direction"] == k, "label_r"].to_numpy()
+        x = top.loc[top["direction"] == k, LABEL].to_numpy()
+        b = dd.loc[dd["direction"] == k, LABEL].to_numpy()
         if len(x) < 30:
             continue
         lift = x.mean() - b.mean()
@@ -183,8 +276,8 @@ def main() -> int:
     print(f"\n{'Anlageklasse':<16}{'n':>7}{'Top':>10}{'Basis':>10}{'Lift':>9}")
     print("-" * 52)
     for grp, nm in ((True, "Aktien/Indizes"), (False, "Krypto")):
-        x = top.loc[top["symbol"].isin(eq) == grp, "label_r"].to_numpy()
-        b = dd.loc[dd["symbol"].isin(eq) == grp, "label_r"].to_numpy()
+        x = top.loc[top["symbol"].isin(eq) == grp, LABEL].to_numpy()
+        b = dd.loc[dd["symbol"].isin(eq) == grp, LABEL].to_numpy()
         if len(x) < 30:
             continue
         print(f"{nm:<16}{len(x):>7}{x.mean():>+10.3f}{b.mean():>+10.3f}"

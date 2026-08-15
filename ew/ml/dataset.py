@@ -178,6 +178,34 @@ def _triple_barrier(
     return r, -1
 
 
+def _forward_excess(
+    df: pd.DataFrame, bar: int, direction: int, horizon: int, drift: float,
+    stop_dist: float,
+) -> float:
+    """Trendbereinigte Vorwaertsrendite ueber einen festen Horizont.
+
+    Von der Log-Rendite wird die **Eigendrift des Instruments** ueber
+    denselben Zeitraum abgezogen. Damit kann ein Aufwaertstrend per
+    Konstruktion nichts mehr beitragen: ein Instrument, das im Mittel
+    steigt, liefert bei zufaelligem Einstieg eine Ueberschussrendite von
+    null statt eines positiven Beitrags.
+
+    Skaliert wird auf das Risiko (Stop-Abstand), damit die Groesse mit den
+    R-Vielfachen der uebrigen Auswertungen vergleichbar bleibt.
+    """
+    n = len(df)
+    e = bar + 1
+    j = e + horizon
+    if j >= n or stop_dist <= 0:
+        return np.nan
+    p0 = float(df["open"].iloc[e])
+    p1 = float(df["close"].iloc[j])
+    if p0 <= 0 or p1 <= 0:
+        return np.nan
+    raw = np.log(p1 / p0) - drift * horizon
+    return direction * raw * p0 / stop_dist
+
+
 def build(
     lat: Lattice,
     df: pd.DataFrame,
@@ -200,6 +228,14 @@ def build(
     a = atr(df, 14)
     atr_arr = a.to_numpy("float64")
     rows: list[dict] = []
+
+    # Eigendrift des Instruments je Bar. Wird fuer das trendbereinigte Label
+    # abgezogen. Die Schaetzung ueber die volle Historie ist zwar
+    # rueckblickend, wirkt aber nur als konstanter Abzug und kann keine
+    # Rangfolge zwischen Samples desselben Instruments erzeugen - sie
+    # verschiebt lediglich das Nullniveau.
+    logp = np.log(df["close"].to_numpy("float64"))
+    drift = float(np.nanmean(np.diff(logp))) if len(logp) > 2 else 0.0
 
     for bar in range(warmup, len(df) - max_bars - 2, step):
         struct = _struct_features_at(lat, df, bar, atr_arr)
@@ -231,6 +267,13 @@ def build(
             row.update(
                 label_r=r, label_hit=hit, bar=bar, ts=df.index[bar],
                 symbol=symbol, timeframe=timeframe,
+                # Trendbereinigtes Label ueber festen Horizont.
+                label_excess=_forward_excess(df, bar, direction, max_bars,
+                                             drift, stop_dist),
+                # Rohe Vorwaertsrendite, aus der spaeter das Querschnitts-
+                # label gebildet wird (Abzug des Marktmittels zur selben Zeit).
+                label_fwd=_forward_excess(df, bar, direction, max_bars,
+                                          0.0, stop_dist),
             )
             rows.append(row)
 
