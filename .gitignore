@@ -1,0 +1,20 @@
+# Marktdaten: reproduzierbar via scripts/fetch_data.py, gehoeren nicht ins Repo.
+# Fuehrender Slash ist wichtig - sonst wuerde auch das Paket ew/data/ ignoriert.
+/data/
+/reports/*.png
+/reports/*.html
+
+# Referenzliteratur (urheberrechtlich geschuetzt)
+*.pdf
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+.DS_Store
+*.egg-info/
+build/
+dist/
+.env
